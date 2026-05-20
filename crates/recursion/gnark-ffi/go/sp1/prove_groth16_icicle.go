@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -22,6 +23,16 @@ var globalR1cs constraint.ConstraintSystem = icicle_groth16.NewCS(ecc.BN254)
 var globalR1csInitialized = false
 var globalPk groth16.ProvingKey = icicle_groth16.NewProvingKey(ecc.BN254)
 var globalPkInitialized = false
+
+func releaseProofLocalHostMemory() bool {
+	if os.Getenv("SP1_GROTH16_FREE_OS_MEMORY") != "1" {
+		return false
+	}
+	// Keep RSS bounded for memory-constrained long-lived GPU server processes.
+	debug.FreeOSMemory()
+	fmt.Println("Released SP1 Groth16 proof-local host memory")
+	return true
+}
 
 func ProveGroth16(dataDir string, witnessPath string) Proof {
 	// Sanity check the required arguments have been provided.
@@ -100,6 +111,11 @@ func ProveGroth16(dataDir string, witnessPath string) Proof {
 		panic(err)
 	}
 	fmt.Printf("Generating proof took %s\n", time.Since(start))
+
+	start = time.Now()
+	if releaseProofLocalHostMemory() {
+		fmt.Printf("Releasing proof-local host memory took %s\n", time.Since(start))
+	}
 
 	return NewSP1Groth16Proof(&proof, witnessInput)
 }
