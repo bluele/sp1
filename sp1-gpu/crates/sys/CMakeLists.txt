@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
+
+if(DEFINED CUDA_ARCHS)
+    string(REPLACE "," ";" CUDA_ARCHS_LIST "${CUDA_ARCHS}")
+    set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCHS_LIST} CACHE STRING "CUDA architectures" FORCE)
+endif()
+
 project(sp1-gpu-cuda LANGUAGES CXX CUDA)
 
 # Require CUDA 12.0+
@@ -138,10 +144,12 @@ set_target_properties(sys-cuda PROPERTIES
 if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
     # nothing needed
 else()
-    target_link_libraries(sys-cuda PRIVATE
-        CUDA::cudart
-        CUDA::nvToolsExt
-    )
+    target_link_libraries(sys-cuda PRIVATE CUDA::cudart)
+    if(TARGET CUDA::nvToolsExt)
+        target_link_libraries(sys-cuda PRIVATE CUDA::nvToolsExt)
+    elseif(TARGET CUDA::nvtx3)
+        target_link_libraries(sys-cuda PRIVATE CUDA::nvtx3)
+    endif()
 endif()
 
 # Install rule
