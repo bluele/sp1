@@ -2,6 +2,8 @@ github.com/bits-and-blooms/bitset v1.24.0 h1:H4x4TuulnokZKvHLfzVRTHJfFfnHEeSYJiz
 github.com/bits-and-blooms/bitset v1.24.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
+github.com/bluele/gnark v0.0.0-20260520122400-67e2f54831de h1:PIppKfIgfNdl9iTe321SAGTg3RuJQBELbqP6JZPJI3s=
+github.com/bluele/gnark v0.0.0-20260520122400-67e2f54831de/go.mod h1:XBV7LkFSZq5AyQhdEN1Y6ntm/QNdu7lnKNvZnh25O7I=
 github.com/consensys/gnark-crypto v0.19.3-0.20251115174214-022ec58e8c19 h1:uUbFaofcFwkv5T/zbR/Gyfm06v84Rua9a1xv9VZrPAA=
 github.com/consensys/gnark-crypto v0.19.3-0.20251115174214-022ec58e8c19/go.mod h1:OgCH7cSoJ46c+nOzvQuwOrIE9fawpXMYOQFzj22Vy3E=
 github.com/consensys/gnark-ignition-verifier v0.0.0-20230527014722-10693546ab33 h1:z42ewLaLxoTYeQ17arcF4WExZc/eSaN3YVlF7eEaPt4=
@@ -31,8 +33,6 @@ github.com/mattn/go-isatty v0.0.16/go.mod h1:kYGgaQfpe5nmfYZH+SKPsOc2e4SrIfOl2e/
 github.com/mattn/go-isatty v0.0.19/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
-github.com/p4u/gnark v0.0.0-20251217225531-cd7874155e26 h1:5oL3XRAaCTzz3v3PvgnUQPuFG3VMP7XAxKEUL9091AA=
-github.com/p4u/gnark v0.0.0-20251217225531-cd7874155e26/go.mod h1:XBV7LkFSZq5AyQhdEN1Y6ntm/QNdu7lnKNvZnh25O7I=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
