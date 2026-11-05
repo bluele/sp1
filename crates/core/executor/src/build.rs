@@ -1,5 +1,6 @@
 /// Based on architecture & feature configurations, choose between
-/// native executor and portable executor.
+/// native executor and portable executor. The `portable` feature selects the portable executor
+/// where the native one would otherwise be chosen, without changing anything else.
 #[allow(clippy::print_stdout)]
 pub fn detect_executor() {
     assert!(std::env::var("OUT_DIR").is_ok(), "detect_executor is not run inside build script!");
@@ -12,7 +13,8 @@ pub fn detect_executor() {
         target_endian = "little",
         target_os = "linux",
         not(feature = "profiling"),
-        not(feature = "mprotect")
+        not(feature = "mprotect"),
+        not(feature = "portable")
     ))]
     println!("cargo:rustc-cfg=sp1_use_native_executor");
 
@@ -21,7 +23,8 @@ pub fn detect_executor() {
         target_endian = "little",
         target_os = "linux",
         not(feature = "profiling"),
-        not(feature = "mprotect")
+        not(feature = "mprotect"),
+        not(feature = "portable")
     )))]
     println!("cargo:rustc-cfg=sp1_use_portable_executor");
 }

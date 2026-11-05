@@ -66,6 +66,9 @@ profiling = [
   "sp1-jit/profiling",
 ]
 mprotect = ["sp1-hypercube/mprotect"]
+# Use the portable executor even where the native (JIT) one is available. Unlike `profiling` and
+# `mprotect`, it changes nothing else: neither dependencies nor verifying keys.
+portable = []
 
 [lints]
 workspace = true
