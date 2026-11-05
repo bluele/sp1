@@ -62,6 +62,10 @@ pub struct MinimalExecutor<M: ExecutionMode> {
     next_clk: u64,
     exit_code: u32,
     max_trace_size: Option<u64>,
+    /// The most instructions to execute, in unconstrained mode too; `None` for no limit.
+    max_instructions: Option<u64>,
+    /// Instructions executed so far, in unconstrained mode too.
+    instructions: u64,
     public_values_stream: Vec<u8>,
     public_value_digest: [u32; PUBLIC_VALUE_DIGEST_WORDS],
     hints: Vec<(u64, Vec<u8>)>,
@@ -448,6 +452,8 @@ impl<M: ExecutionMode> MinimalExecutor<M> {
             page_prots,
             traces: None,
             max_trace_size,
+            max_instructions: None,
+            instructions: 0,
             public_values_stream: Vec::new(),
             public_value_digest: [0; PUBLIC_VALUE_DIGEST_WORDS],
             hints: Vec::new(),
@@ -474,6 +480,14 @@ impl<M: ExecutionMode> MinimalExecutor<M> {
     #[must_use]
     pub fn new(program: Arc<Program>, debug: bool, max_trace_size: Option<u64>) -> Self {
         Self::new_with_limit(program, debug, max_trace_size, None)
+    }
+
+    /// Fail execution with [`ExecutionError::ExceededCycleLimit`] once it has executed
+    /// `max_instructions` instructions, counting those in unconstrained mode, which the global
+    /// clock does not. Trace chunks end only at memory-read thresholds, so a caller cannot bound
+    /// a loop without memory reads between chunks; this bounds every execution.
+    pub fn set_max_instructions(&mut self, max_instructions: Option<u64>) {
+        self.max_instructions = max_instructions;
     }
 
     /// WARNING: This function's API is subject to change without a major version bump.
@@ -1009,6 +1023,12 @@ macro_rules! impl_execute_chunk {
             while !self.execute_instruction() {
                 if self.memory.has_last_error() {
                     return Err(self.memory.last_error());
+                }
+                self.instructions = self.instructions.wrapping_add(1);
+                if let Some(max) = self.max_instructions {
+                    if self.instructions >= max {
+                        return Err(ExecutionError::ExceededCycleLimit(max));
+                    }
                 }
             }
 

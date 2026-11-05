@@ -244,6 +244,15 @@ impl MinimalExecutorEnum {
         }
     }
 
+    /// Calls `set_max_instructions` to respective `MinimalExecutor` (portable executor only).
+    #[cfg(sp1_use_portable_executor)]
+    pub fn set_max_instructions(&mut self, max_instructions: Option<u64>) {
+        match self {
+            Self::Supervisor(e) => e.set_max_instructions(max_instructions),
+            Self::User(e) => e.set_max_instructions(max_instructions),
+        }
+    }
+
     /// Calls `try_execute_chunk` (native executor fallback — infallible).
     #[cfg(not(sp1_use_portable_executor))]
     pub fn try_execute_chunk(&mut self) -> Result<Option<TraceChunkRaw>, crate::ExecutionError> {
