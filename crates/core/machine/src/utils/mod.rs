@@ -1,5 +1,6 @@
 pub mod concurrency;
 mod logger;
+#[cfg(feature = "runner")]
 mod prove;
 mod span;
 #[cfg(test)]
@@ -7,6 +8,7 @@ mod test;
 mod zerocheck_unit_test;
 
 pub use logger::*;
+#[cfg(feature = "runner")]
 pub use prove::*;
 use slop_algebra::{AbstractField, Field};
 pub use span::*;
