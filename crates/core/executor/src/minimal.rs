@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::{Program, SupervisorMode, UserMode};
 pub use arch::*;
+pub use ecall::{take_commitment_calls, CommitmentCall};
 pub use postprocess::chunked_memory_init_events;
 pub use sp1_jit::{MemValue, TraceChunkRaw};
 

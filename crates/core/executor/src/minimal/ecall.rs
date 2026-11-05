@@ -33,6 +33,46 @@ use sp1_curves::{
 };
 use sp1_jit::{Interrupt, RiscRegister, SyscallContext};
 
+/// A commitment syscall, as the program issued it.
+///
+/// The minimal executor keeps only the last value of each public-values digest word and ignores
+/// the deferred-proofs digest. These records keep every such call in order, so that a caller can
+/// compare what the program committed with what a proof of the execution would require. Recording
+/// does not change execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommitmentCall {
+    /// `COMMIT(index, word)`: a word of the public-values digest.
+    Commit {
+        /// The digest word's index (`a0`).
+        index: u64,
+        /// The word (`a1`).
+        word: u64,
+    },
+    /// `COMMIT_DEFERRED_PROOFS(index, word)`: a word of the deferred-proofs digest.
+    CommitDeferredProofs {
+        /// The digest word's index (`a0`).
+        index: u64,
+        /// The word (`a1`).
+        word: u64,
+    },
+}
+
+thread_local! {
+    static COMMITMENT_CALLS: std::cell::RefCell<Vec<CommitmentCall>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn record_commitment_call(call: CommitmentCall) {
+    COMMITMENT_CALLS.with(|calls| calls.borrow_mut().push(call));
+}
+
+/// Takes, and clears, the commitment syscalls issued on this thread since the last call. The JIT
+/// and the portable executor both handle syscalls on the thread that executes the program.
+#[must_use]
+pub fn take_commitment_calls() -> Vec<CommitmentCall> {
+    COMMITMENT_CALLS.with(|calls| std::mem::take(&mut *calls.borrow_mut()))
+}
+
 // Used by the x86_64 JIT executor. When profiling is enabled, only compiled for tests.
 #[cfg(all(
     target_arch = "x86_64",
@@ -179,11 +219,16 @@ pub fn ecall_handler(ctx: &mut impl SyscallContext, code: SyscallCode) -> Result
             Ok(delete_profile_symbols_syscall(ctx, arg1, arg2))
         }
         SyscallCode::COMMIT => {
+            record_commitment_call(CommitmentCall::Commit { index: arg1, word: arg2 });
             let digest_word: u32 = arg2.try_into().expect("digest word should fit in u32");
             ctx.set_public_value_digest_word(arg1, digest_word);
             Ok(None)
         }
-        SyscallCode::VERIFY_SP1_PROOF | SyscallCode::COMMIT_DEFERRED_PROOFS => Ok(None),
+        SyscallCode::COMMIT_DEFERRED_PROOFS => {
+            record_commitment_call(CommitmentCall::CommitDeferredProofs { index: arg1, word: arg2 });
+            Ok(None)
+        }
+        SyscallCode::VERIFY_SP1_PROOF => Ok(None),
     }
     .map(|opt: Option<u64>| opt.unwrap_or(code as u64))
 }
