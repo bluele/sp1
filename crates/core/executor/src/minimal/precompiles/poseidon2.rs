@@ -20,6 +20,13 @@ pub(crate) unsafe fn poseidon2(
     // Cast to [u32; 16] array directly (same as syscalls version)
     let input_arr: &[u32; 16] = &*(input.as_ptr().cast::<[u32; 16]>());
 
+    // The Poseidon2 chip constrains every input word to be below the field modulus, which
+    // `from_canonical_u32` only debug-asserts.
+    assert!(
+        input_arr.iter().all(|&word| word < SP1Field::ORDER_U32),
+        "Poseidon2 input word is not a canonical field element"
+    );
+
     // Apply Poseidon2 permutation
     let perm = inner_perm();
     let output_hash =

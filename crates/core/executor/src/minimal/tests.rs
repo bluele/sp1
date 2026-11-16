@@ -40,6 +40,58 @@ fn test_chunk_stops_correctly() {
     assert!(chunk_count > 5, "no chunks were executed");
 }
 
+// The native executor's `extern "C"` handler turns a precompile's panic into an abort.
+#[cfg(sp1_use_portable_executor)]
+fn run_poseidon2(index: usize, word: u32) {
+    use crate::{add_halt, Instruction, Opcode, Register, SyscallCode};
+
+    const STATE: u64 = 0x10_0000;
+
+    let mut state = [0u64; 8];
+    state[index / 2] = u64::from(word) << (32 * (index % 2));
+
+    let mut instructions = Vec::new();
+    for (i, value) in state.into_iter().enumerate() {
+        instructions.push(Instruction::new(Opcode::ADDI, 29, 0, value, false, true));
+        instructions.push(Instruction::new(Opcode::SD, 29, 0, STATE + 8 * i as u64, false, true));
+    }
+    let poseidon2 = SyscallCode::POSEIDON2 as u64;
+    instructions.extend([
+        Instruction::new(Opcode::ADDI, Register::X5 as u8, 0, poseidon2, false, true),
+        Instruction::new(Opcode::ADDI, Register::X10 as u8, 0, STATE, false, true),
+        Instruction::new(
+            Opcode::ECALL,
+            Register::X5 as u8,
+            Register::X10 as u64,
+            Register::X11 as u64,
+            false,
+            false,
+        ),
+    ]);
+    add_halt(&mut instructions);
+
+    let program = Arc::new(Program::new(instructions, 0, 0));
+    let mut executor = MinimalExecutor::<SupervisorMode>::new(program, false, None);
+    while executor.execute_chunk().is_some() {}
+}
+
+#[test]
+#[cfg(sp1_use_portable_executor)]
+fn test_poseidon2_refuses_a_word_at_the_modulus() {
+    use slop_algebra::PrimeField32;
+    use sp1_primitives::SP1Field;
+
+    for index in 0..16 {
+        run_poseidon2(index, SP1Field::ORDER_U32 - 1);
+
+        let panic = std::panic::catch_unwind(|| run_poseidon2(index, SP1Field::ORDER_U32))
+            .expect_err("the executor ran a word at the modulus");
+        // A debug assertion in `from_canonical_u32` must not satisfy this test.
+        let message = panic.downcast_ref::<&str>().copied().unwrap_or_default();
+        assert!(message.contains("not a canonical field element"), "word {index}: {message}");
+    }
+}
+
 /// Differential tests comparing the portable executor against the native `x86_64` executor.
 /// Only compiled on `x86_64` with the profiling feature enabled.
 #[cfg(all(target_arch = "x86_64", feature = "profiling"))]
