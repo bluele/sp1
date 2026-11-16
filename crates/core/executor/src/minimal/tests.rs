@@ -42,53 +42,111 @@ fn test_chunk_stops_correctly() {
 
 // The native executor's `extern "C"` handler turns a precompile's panic into an abort.
 #[cfg(sp1_use_portable_executor)]
-fn run_poseidon2(index: usize, word: u32) {
-    use crate::{add_halt, Instruction, Opcode, Register, SyscallCode};
+mod refusal_tests {
+    use std::{
+        panic::{catch_unwind, AssertUnwindSafe},
+        sync::Arc,
+    };
 
-    const STATE: u64 = 0x10_0000;
+    use slop_algebra::PrimeField32;
+    use sp1_curves::{
+        params::FieldParameters,
+        weierstrass::{
+            bls12_381::Bls12381, bn254::Bn254, secp256k1::Secp256k1, secp256r1::Secp256r1,
+        },
+        AffinePoint, EllipticCurve,
+    };
+    use sp1_primitives::SP1Field;
 
-    let mut state = [0u64; 8];
-    state[index / 2] = u64::from(word) << (32 * (index % 2));
+    use super::MinimalExecutor;
+    use crate::{add_halt, Instruction, Opcode, Program, Register, SupervisorMode, SyscallCode};
 
-    let mut instructions = Vec::new();
-    for (i, value) in state.into_iter().enumerate() {
-        instructions.push(Instruction::new(Opcode::ADDI, 29, 0, value, false, true));
-        instructions.push(Instruction::new(Opcode::SD, 29, 0, STATE + 8 * i as u64, false, true));
-    }
-    let poseidon2 = SyscallCode::POSEIDON2 as u64;
-    instructions.extend([
-        Instruction::new(Opcode::ADDI, Register::X5 as u8, 0, poseidon2, false, true),
-        Instruction::new(Opcode::ADDI, Register::X10 as u8, 0, STATE, false, true),
-        Instruction::new(
+    fn run(code: SyscallCode, a0: &[u64], a1: &[u64]) {
+        const A0: u64 = 0x10_0000;
+        const A1: u64 = 0x10_0100;
+
+        let li = |register: u8, value: u64| {
+            Instruction::new(Opcode::ADDI, register, 0, value, false, true)
+        };
+        let mut instructions = Vec::new();
+        for (addr, words) in [(A0, a0), (A1, a1)] {
+            for (i, &word) in words.iter().enumerate() {
+                let addr = addr + 8 * i as u64;
+                instructions.push(li(29, word));
+                instructions.push(Instruction::new(Opcode::SD, 29, 0, addr, false, true));
+            }
+        }
+        instructions.push(li(Register::X5 as u8, code as u64));
+        instructions.push(li(Register::X10 as u8, A0));
+        if !a1.is_empty() {
+            // Poseidon2 takes one operand, and its chip requires the other argument to be zero.
+            instructions.push(li(Register::X11 as u8, A1));
+        }
+        instructions.push(Instruction::new(
             Opcode::ECALL,
             Register::X5 as u8,
             Register::X10 as u64,
             Register::X11 as u64,
             false,
             false,
-        ),
-    ]);
-    add_halt(&mut instructions);
+        ));
+        add_halt(&mut instructions);
 
-    let program = Arc::new(Program::new(instructions, 0, 0));
-    let mut executor = MinimalExecutor::<SupervisorMode>::new(program, false, None);
-    while executor.execute_chunk().is_some() {}
-}
+        let program = Arc::new(Program::new(instructions, 0, 0));
+        let mut executor = MinimalExecutor::<SupervisorMode>::new(program, false, None);
+        while executor.execute_chunk().is_some() {}
+    }
 
-#[test]
-#[cfg(sp1_use_portable_executor)]
-fn test_poseidon2_refuses_a_word_at_the_modulus() {
-    use slop_algebra::PrimeField32;
-    use sp1_primitives::SP1Field;
+    fn assert_refused(call: impl FnOnce(), message: &str) {
+        let panic = catch_unwind(AssertUnwindSafe(call)).expect_err("the executor ran the call");
+        // A different panic of the precompile, such as a debug assertion, is not the refusal.
+        let found = panic.downcast_ref::<&str>().copied().unwrap_or_default();
+        assert!(found.contains(message), "{found}");
+    }
 
-    for index in 0..16 {
-        run_poseidon2(index, SP1Field::ORDER_U32 - 1);
+    #[test]
+    fn test_poseidon2_refuses_a_word_at_the_modulus() {
+        for index in 0..16 {
+            let state = |word: u32| {
+                let mut state = [0u64; 8];
+                state[index / 2] = u64::from(word) << (32 * (index % 2));
+                state
+            };
+            run(SyscallCode::POSEIDON2, &state(SP1Field::ORDER_U32 - 1), &[]);
+            assert_refused(
+                || run(SyscallCode::POSEIDON2, &state(SP1Field::ORDER_U32), &[]),
+                "not a canonical field element",
+            );
+        }
+    }
 
-        let panic = std::panic::catch_unwind(|| run_poseidon2(index, SP1Field::ORDER_U32))
-            .expect_err("the executor ran a word at the modulus");
-        // A debug assertion in `from_canonical_u32` must not satisfy this test.
-        let message = panic.downcast_ref::<&str>().copied().unwrap_or_default();
-        assert!(message.contains("not a canonical field element"), "word {index}: {message}");
+    fn weierstrass_add_refusals<E: EllipticCurve>(code: SyscallCode) {
+        let add = |p: &AffinePoint<E>, q: &AffinePoint<E>| {
+            run(code, &p.to_words_le(), &q.to_words_le());
+        };
+        let refused = |p: &AffinePoint<E>, q: &AffinePoint<E>| {
+            assert_refused(|| add(p, q), "canonical coordinates and distinct x");
+        };
+
+        let modulus = E::BaseField::modulus();
+        let g = E::ec_generator();
+        let g2 = E::ec_double(&g);
+        add(&g, &g2);
+
+        refused(&g, &g);
+        refused(&g, &E::ec_neg(&g));
+        refused(&AffinePoint::new(modulus.clone(), g.y.clone()), &g2);
+        refused(&AffinePoint::new(g.x.clone(), modulus.clone()), &g2);
+        refused(&g, &AffinePoint::new(modulus.clone(), g2.y.clone()));
+        refused(&g, &AffinePoint::new(g2.x.clone(), modulus));
+    }
+
+    #[test]
+    fn test_weierstrass_add_refuses_equal_x_and_a_coordinate_at_the_modulus() {
+        weierstrass_add_refusals::<Secp256k1>(SyscallCode::SECP256K1_ADD);
+        weierstrass_add_refusals::<Secp256r1>(SyscallCode::SECP256R1_ADD);
+        weierstrass_add_refusals::<Bn254>(SyscallCode::BN254_ADD);
+        weierstrass_add_refusals::<Bls12381>(SyscallCode::BLS12381_ADD);
     }
 }
 

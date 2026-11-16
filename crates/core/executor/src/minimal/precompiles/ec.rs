@@ -11,6 +11,7 @@ pub(crate) unsafe fn ec_add<E: EllipticCurve>(
     ctx: &mut impl SyscallContext,
     arg1: u64,
     arg2: u64,
+    check: impl FnOnce(&AffinePoint<E>, &AffinePoint<E>),
 ) -> Result<(), Interrupt> {
     let p_ptr = arg1;
     if !p_ptr.is_multiple_of(8) {
@@ -30,6 +31,7 @@ pub(crate) unsafe fn ec_add<E: EllipticCurve>(
     ctx.set_clk(clk);
     let p_affine = AffinePoint::<E>::from_words_le(ctx.mr_slice_unsafe(p_ptr, num_words));
     let q_affine = AffinePoint::<E>::from_words_le(ctx.mr_slice_without_prot(q_ptr, num_words));
+    check(&p_affine, &q_affine);
     let result_affine = p_affine + q_affine;
 
     let result_words = result_affine.to_words_le();
