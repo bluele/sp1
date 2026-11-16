@@ -196,6 +196,26 @@ mod refusal_tests {
             assert_refused(|| add(&bad, &bad), "canonical points on the curve");
         }
     }
+
+    #[test]
+    fn test_edwards_decompress_refuses_a_non_canonical_y() {
+        let decompress = |y: &BigUint| {
+            let slice = AffinePoint::<Ed25519>::new(BigUint::ZERO, y.clone()).to_words_le();
+            run(SyscallCode::ED_DECOMPRESS, &slice, &[]);
+        };
+
+        let g = Ed25519::ec_generator();
+        decompress(&g.y);
+        decompress(&(Ed25519BaseField::modulus() - 1u32));
+
+        for y in [
+            Ed25519BaseField::modulus(),
+            // Clearing bit 255 would recover the generator's y.
+            &g.y + (BigUint::from(1u32) << 255),
+        ] {
+            assert_refused(|| decompress(&y), "canonical y");
+        }
+    }
 }
 
 /// Differential tests comparing the portable executor against the native `x86_64` executor.

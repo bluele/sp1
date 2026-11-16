@@ -1,6 +1,11 @@
+use num::BigUint;
 use sp1_curves::{
     curve25519_dalek::CompressedEdwardsY,
-    edwards::{ed25519::decompress, WORDS_FIELD_ELEMENT},
+    edwards::{
+        ed25519::{decompress, Ed25519BaseField},
+        WORDS_FIELD_ELEMENT,
+    },
+    params::FieldParameters,
     COMPRESSED_POINT_BYTES,
 };
 use sp1_jit::{Interrupt, SyscallContext};
@@ -25,6 +30,12 @@ pub unsafe fn edwards_decompress_syscall(
         ctx.mr_slice_without_prot(slice_ptr + (COMPRESSED_POINT_BYTES as u64), WORDS_FIELD_ELEMENT);
     let y_bytes: [u8; COMPRESSED_POINT_BYTES] = words_to_bytes_le(y);
     ctx.bump_memory_clk();
+
+    // The Edwards decompress chip constrains `y` to be below the modulus.
+    assert!(
+        BigUint::from_bytes_le(&y_bytes) < Ed25519BaseField::modulus(),
+        "Edwards decompress needs a canonical y"
+    );
 
     // Copy bytes into another array so we can modify the last byte and make CompressedEdwardsY,
     // which we'll use to compute the expected X.
