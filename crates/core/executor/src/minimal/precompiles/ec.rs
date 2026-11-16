@@ -51,6 +51,7 @@ pub(crate) unsafe fn ec_double<E: EllipticCurve>(
     ctx: &mut impl SyscallContext,
     arg1: u64,
     _: u64,
+    check: impl FnOnce(&AffinePoint<E>),
 ) -> Result<(), Interrupt> {
     let p_ptr = arg1;
     if !p_ptr.is_multiple_of(8) {
@@ -64,6 +65,7 @@ pub(crate) unsafe fn ec_double<E: EllipticCurve>(
     let p = ctx.mr_slice_unsafe(p_ptr, num_words);
 
     let p_affine = AffinePoint::<E>::from_words_le(p);
+    check(&p_affine);
 
     let result_affine = E::ec_double(&p_affine);
 

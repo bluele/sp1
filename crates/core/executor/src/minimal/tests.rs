@@ -48,6 +48,7 @@ mod refusal_tests {
         sync::Arc,
     };
 
+    use num::BigUint;
     use slop_algebra::PrimeField32;
     use sp1_curves::{
         params::FieldParameters,
@@ -147,6 +148,29 @@ mod refusal_tests {
         weierstrass_add_refusals::<Secp256r1>(SyscallCode::SECP256R1_ADD);
         weierstrass_add_refusals::<Bn254>(SyscallCode::BN254_ADD);
         weierstrass_add_refusals::<Bls12381>(SyscallCode::BLS12381_ADD);
+    }
+
+    fn weierstrass_double_refusals<E: EllipticCurve>(code: SyscallCode) {
+        let double = |p: &AffinePoint<E>| run(code, &p.to_words_le(), &[]);
+        let refused = |p: &AffinePoint<E>| {
+            assert_refused(|| double(p), "canonical coordinates and a non-zero y");
+        };
+
+        let modulus = E::BaseField::modulus();
+        let g = E::ec_generator();
+        double(&g);
+
+        refused(&AffinePoint::new(g.x.clone(), BigUint::ZERO));
+        refused(&AffinePoint::new(modulus.clone(), g.y.clone()));
+        refused(&AffinePoint::new(g.x.clone(), modulus));
+    }
+
+    #[test]
+    fn test_weierstrass_double_refuses_a_zero_y_and_a_coordinate_at_the_modulus() {
+        weierstrass_double_refusals::<Secp256k1>(SyscallCode::SECP256K1_DOUBLE);
+        weierstrass_double_refusals::<Secp256r1>(SyscallCode::SECP256R1_DOUBLE);
+        weierstrass_double_refusals::<Bn254>(SyscallCode::BN254_DOUBLE);
+        weierstrass_double_refusals::<Bls12381>(SyscallCode::BLS12381_DOUBLE);
     }
 }
 
