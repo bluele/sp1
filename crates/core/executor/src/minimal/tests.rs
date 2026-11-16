@@ -51,6 +51,7 @@ mod refusal_tests {
     use num::BigUint;
     use slop_algebra::PrimeField32;
     use sp1_curves::{
+        edwards::ed25519::{Ed25519, Ed25519BaseField},
         params::FieldParameters,
         weierstrass::{
             bls12_381::Bls12381, bn254::Bn254, secp256k1::Secp256k1, secp256r1::Secp256r1,
@@ -171,6 +172,29 @@ mod refusal_tests {
         weierstrass_double_refusals::<Secp256r1>(SyscallCode::SECP256R1_DOUBLE);
         weierstrass_double_refusals::<Bn254>(SyscallCode::BN254_DOUBLE);
         weierstrass_double_refusals::<Bls12381>(SyscallCode::BLS12381_DOUBLE);
+    }
+
+    #[test]
+    fn test_edwards_add_refuses_a_point_off_the_curve_or_non_canonical() {
+        let add = |p: &AffinePoint<Ed25519>, q: &AffinePoint<Ed25519>| {
+            run(SyscallCode::ED_ADD, &p.to_words_le(), &q.to_words_le());
+        };
+
+        let modulus = Ed25519BaseField::modulus();
+        let g = Ed25519::ec_generator();
+        let g2 = Ed25519::ec_double(&g);
+        add(&g, &g2);
+
+        for bad in [
+            // Keeps `y` and the sign of `x`, from which the addition rebuilds its operand.
+            AffinePoint::new(&g.x + 2u32, g.y.clone()),
+            AffinePoint::new(&g.x + &modulus, g.y.clone()),
+            AffinePoint::new(BigUint::ZERO, &modulus + 1u32),
+        ] {
+            assert_refused(|| add(&bad, &g2), "canonical points on the curve");
+            assert_refused(|| add(&g2, &bad), "canonical points on the curve");
+            assert_refused(|| add(&bad, &bad), "canonical points on the curve");
+        }
     }
 }
 
