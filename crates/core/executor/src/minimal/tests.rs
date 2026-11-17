@@ -216,6 +216,27 @@ mod refusal_tests {
             assert_refused(|| decompress(&y), "canonical y");
         }
     }
+
+    #[test]
+    fn test_uint256_mul_refuses_a_quotient_above_256_bits() {
+        let words = |values: &[&BigUint]| -> Vec<u64> {
+            values.iter().flat_map(|value| value.iter_u64_digits().chain([0; 4]).take(4)).collect()
+        };
+        let mulmod = |x: &BigUint, y: &BigUint, modulus: &BigUint| {
+            run(SyscallCode::UINT256_MUL, &words(&[x]), &words(&[y, modulus]));
+        };
+
+        let max = (BigUint::from(1u32) << 256) - 1u32;
+        // The quotient of `max * max` by `max` is the largest that fits, and by `max - 1` it is
+        // 2^256.
+        mulmod(&max, &max, &max);
+        // A zero modulus stands for 2^256.
+        mulmod(&max, &max, &BigUint::ZERO);
+        // Both operands and the quotient may exceed the modulus.
+        mulmod(&BigUint::from(5u32), &BigUint::from(7u32), &BigUint::from(3u32));
+
+        assert_refused(|| mulmod(&max, &max, &(&max - 1u32)), "quotient");
+    }
 }
 
 /// Differential tests comparing the portable executor against the native `x86_64` executor.

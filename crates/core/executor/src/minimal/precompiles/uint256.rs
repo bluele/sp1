@@ -1,4 +1,4 @@
-use num::{BigUint, One, Zero};
+use num::{BigUint, Integer, One, Zero};
 
 use sp1_curves::edwards::WORDS_FIELD_ELEMENT;
 use sp1_jit::{Interrupt, SyscallContext};
@@ -44,7 +44,10 @@ pub(crate) unsafe fn uint256_mul(
         let modulus = BigUint::one() << 256;
         (uint256_x * uint256_y) % modulus
     } else {
-        (uint256_x * uint256_y) % uint256_modulus
+        let (quotient, result) = (uint256_x * uint256_y).div_rem(&uint256_modulus);
+        // The uint256 chip holds the quotient in 32 byte limbs.
+        assert!(quotient.bits() <= 256, "uint256 mulmod needs a quotient below 2^256");
+        result
     };
 
     let mut result_bytes = result.to_bytes_le();
