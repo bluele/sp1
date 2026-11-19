@@ -9,6 +9,10 @@ use hashbrown::{
 use sp1_jit::PageProtValue;
 use std::cell::RefCell;
 
+/// The lowest address that the circuit lets an instruction or a precompile access: its address
+/// operation keeps 2^16 bytes below the stack, which grows down to 0, as a guard.
+const MIN_ACCESSED_ADDR: u64 = 1 << 16;
+
 /// A memory backed by [`PagedMemory`], which can be in either owned or COW mode.
 pub enum MaybeCowMemory<T: Copy> {
     Cow { copy: PagedMemory<T>, original: PagedMemory<T> },
@@ -146,6 +150,20 @@ impl Limiter {
         }
         Ok(())
     }
+
+    /// [`Limiter::check_ptr`] for an access that the circuit constrains, which also has a lower
+    /// bound.
+    fn check_accessed(&self, addr: u64, write: bool) -> Result<(), ExecutionError> {
+        if let Self::Limit { .. } = self {
+            if addr < MIN_ACCESSED_ADDR {
+                return Err(ExecutionError::InvalidMemoryAccess(
+                    if write { Opcode::SD } else { Opcode::LD },
+                    addr,
+                ));
+            }
+        }
+        self.check_ptr(addr, write)
+    }
 }
 
 /// A memory with an optional entry limit
@@ -194,7 +212,9 @@ impl<T: Copy + Default> LimitedMemory<T> {
         self.limiter = self.before_cow.take().unwrap();
     }
 
-    /// Get a value from the memory.
+    /// Get a value from the memory. Only the top is checked: the reads that the circuit does not
+    /// constrain come here, such as `WRITE`'s, whose empty buffer may point below the guard, and the
+    /// constrained accesses check the guard in [`Self::get_mut`] and [`Self::insert`] first.
     #[inline]
     pub fn get(&self, addr: u64) -> Option<&T> {
         self.check_ptr(addr, false);
@@ -222,7 +242,7 @@ impl<T: Copy + Default> LimitedMemory<T> {
     /// Insert a value into the memory.
     #[inline]
     pub fn insert(&mut self, addr: u64, value: T) {
-        self.check_ptr(addr, true);
+        self.check_accessed(addr, true);
         if self.has_last_error() {
             return;
         }
@@ -235,6 +255,11 @@ impl<T: Copy + Default> LimitedMemory<T> {
     #[inline]
     fn check_ptr(&self, addr: u64, write: bool) {
         c(&self.last_error, self.limiter.check_ptr(addr, write));
+    }
+
+    #[inline]
+    fn check_accessed(&self, addr: u64, write: bool) {
+        c(&self.last_error, self.limiter.check_accessed(addr, write));
     }
 
     #[inline]
@@ -257,7 +282,7 @@ impl<T: Copy + Default> LimitedMemory<T> {
     /// Get a mutable reference for the given address
     #[inline]
     pub fn get_mut(&mut self, addr: u64) -> &'_ mut T {
-        self.check_ptr(addr, true);
+        self.check_accessed(addr, true);
         if self.has_last_error() {
             return &mut self.dummy_value;
         }

@@ -61,7 +61,10 @@ mod refusal_tests {
     use sp1_primitives::SP1Field;
 
     use super::MinimalExecutor;
-    use crate::{add_halt, Instruction, Opcode, Program, Register, SupervisorMode, SyscallCode};
+    use crate::{
+        add_halt, ExecutionError, Instruction, Opcode, Program, Register, SupervisorMode,
+        SyscallCode,
+    };
 
     fn run(code: SyscallCode, a0: &[u64], a1: &[u64]) {
         const A0: u64 = 0x10_0000;
@@ -236,6 +239,74 @@ mod refusal_tests {
         mulmod(&BigUint::from(5u32), &BigUint::from(7u32), &BigUint::from(3u32));
 
         assert_refused(|| mulmod(&max, &max, &(&max - 1u32)), "quotient");
+    }
+
+    /// Run `instructions` and halt, under a memory limit as a caller that bounds memory runs a
+    /// program, with `input` in the hint stream.
+    fn try_run(mut instructions: Vec<Instruction>, input: &[u8]) -> Result<(), ExecutionError> {
+        add_halt(&mut instructions);
+        let program = Arc::new(Program::new(instructions, 0, 0));
+        let mut executor =
+            MinimalExecutor::<SupervisorMode>::new_with_limit(program, false, None, Some(1 << 30));
+        executor.with_input(input);
+        while executor.try_execute_chunk()?.is_some() {}
+        Ok(())
+    }
+
+    #[test]
+    fn test_an_access_below_the_stack_guard_is_refused() {
+        const GUARD: u64 = 1 << 16;
+        let li = |register: Register, value: u64| {
+            Instruction::new(Opcode::ADDI, register as u8, 0, value, false, true)
+        };
+        let ecall = |code: SyscallCode, args: &[u64]| {
+            let mut instructions = vec![li(Register::X5, code as u64)];
+            for (&register, &arg) in [Register::X10, Register::X11, Register::X12].iter().zip(args)
+            {
+                instructions.push(li(register, arg));
+            }
+            instructions.push(Instruction::new(
+                Opcode::ECALL,
+                Register::X5 as u8,
+                Register::X10 as u64,
+                Register::X11 as u64,
+                false,
+                false,
+            ));
+            instructions
+        };
+        let store = |addr| {
+            vec![li(Register::X29, 7), Instruction::new(Opcode::SD, 29, 0, addr, false, true)]
+        };
+        let load = |addr| vec![Instruction::new(Opcode::LD, 29, 0, addr, false, true)];
+        let poseidon2 = |addr| ecall(SyscallCode::POSEIDON2, &[addr]);
+        let hint = |addr| ecall(SyscallCode::HINT_READ, &[addr, 8]);
+
+        for addr in [GUARD, GUARD + 8] {
+            try_run(store(addr), &[]).unwrap();
+            try_run(load(addr), &[]).unwrap();
+            try_run(poseidon2(addr), &[]).unwrap();
+            try_run(hint(addr), &[1; 8]).unwrap();
+        }
+        for addr in [0, 8, GUARD - 8] {
+            for (case, input) in [
+                (store(addr), &[][..]),
+                (load(addr), &[][..]),
+                (poseidon2(addr), &[][..]),
+                (hint(addr), &[1u8; 8][..]),
+            ] {
+                assert!(
+                    matches!(
+                        try_run(case, input),
+                        Err(ExecutionError::InvalidMemoryAccess(_, refused)) if refused == addr
+                    ),
+                    "{addr:#x}"
+                );
+            }
+        }
+        // The circuit's `WRITE` reads no memory, and an empty buffer may point anywhere: the
+        // executor reads the word at its pointer without a trace, and runs it.
+        try_run(ecall(SyscallCode::WRITE, &[1, 1, 0]), &[]).unwrap();
     }
 }
 
